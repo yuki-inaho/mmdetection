@@ -25,6 +25,9 @@ dependencies = [
     "six",
     "terminaltables",
     "tqdm",
+    # backend for AdaBeliefOptimizer (pure-Python). The Adan backend is installed
+    # separately via `just install-adan` (its setup.py builds a CUDA fused kernel).
+    "adabelief-pytorch",
 ]
 
 [tool.uv]

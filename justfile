@@ -19,6 +19,14 @@ sync:
     printf '%s\n' "{{ justfile_directory() }}" > "{{ VENV }}/lib/python3.10/site-packages/_cu12_src.pth"
     @echo "Synced: cu12 deps + mmdet source on path (.pth)."
 
+# Install the Adan optimizer backend (sail-sg/Adan) for AdanOptimizer, pure-Python
+# (CUDA fused kernel skipped so it works regardless of the box's CUDA toolkit).
+# uv sync prunes it, so run after sync.
+install-adan:
+    env -u CUDA_HOME CUDA_VISIBLE_DEVICES="" FORCE_CUDA=0 \
+      uv pip install "git+https://github.com/sail-sg/Adan.git" --no-build-isolation
+    @echo "Adan backend installed (pure-Python)."
+
 # Read-only environment triage (imports from /tmp to avoid source shadowing).
 env-doctor:
     @echo "=== gpu ==="
