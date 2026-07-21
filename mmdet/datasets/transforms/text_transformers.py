@@ -60,7 +60,7 @@ def check_for_positive_overflow(gt_bboxes, gt_labels, text, tokenizer,
             keep_gt_labels.append(gt_labels[i])
 
     return gt_bboxes[keep_box_index], np.array(
-        keep_gt_labels, dtype=np.long), length
+        keep_gt_labels, dtype=np.int_), length
 
 
 def generate_senetence_given_labels(positive_label_list, negative_label_list,
@@ -199,7 +199,7 @@ class RandomSamplingNegPos(BaseTransform):
 
             for i in np.random.choice(
                     valid_negative_indexes, size=num_negatives, replace=False):
-                if i not in positive_label_list:
+                if int(i) not in positive_label_list:
                     negative_label_list.add(i)
 
         random.shuffle(positive_label_list)
