@@ -63,6 +63,7 @@ class CSPNeXt(BaseModule):
 
     def __init__(
         self,
+        in_channels=3,
         arch: str = 'P5',
         deepen_factor: float = 1.0,
         widen_factor: float = 1.0,
@@ -103,7 +104,7 @@ class CSPNeXt(BaseModule):
         conv = DepthwiseSeparableConvModule if use_depthwise else ConvModule
         self.stem = nn.Sequential(
             ConvModule(
-                3,
+                in_channels,
                 int(arch_setting[0][0] * widen_factor // 2),
                 3,
                 padding=1,
