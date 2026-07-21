@@ -1,10 +1,12 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import copy
 import os.path as osp
 import warnings
 from typing import Optional, Sequence
 
 import mmcv
 import numpy as np
+import torch
 from mmengine.fileio import get
 from mmengine.hooks import Hook
 from mmengine.runner import Runner
@@ -16,6 +18,68 @@ from mmdet.registry import HOOKS
 from mmdet.structures import DetDataSample, TrackDataSample
 from mmdet.structures.bbox import BaseBoxes
 from mmdet.visualization.palette import _get_adaptive_scales
+
+
+def _restore_gt_instances_to_original_space(
+        data_sample: DetDataSample) -> DetDataSample:
+    """Return a display sample whose GT boxes match the original image.
+
+    Test-time detector predictions are returned in original-image coordinates
+    (``rescale=True``), while GT annotations are packed after the test resize.
+    The hook loads the original file for drawing, so restore GT before passing
+    it to the visualizer.  The runner output is never mutated.
+    """
+    scale_factor = data_sample.get('scale_factor', None)
+    if scale_factor is None:
+        return data_sample
+
+    scale_factor = np.asarray(scale_factor, dtype=np.float32).reshape(-1)
+    if scale_factor.size not in (2, 4):
+        warnings.warn('Skipping GT coordinate restoration because '
+                      f'scale_factor has {scale_factor.size} values.')
+        return data_sample
+
+    scale_x, scale_y = scale_factor[:2]
+    if scale_x <= 0 or scale_y <= 0:
+        warnings.warn('Skipping GT coordinate restoration because '
+                      f'scale_factor is invalid: ({scale_x}, {scale_y}).')
+        return data_sample
+    if np.allclose((scale_x, scale_y), (1.0, 1.0)):
+        return data_sample
+
+    display_sample = copy.deepcopy(data_sample)
+    inverse_scale = (1.0 / float(scale_x), 1.0 / float(scale_y))
+    for field in ('gt_instances', 'ignored_instances'):
+        instances = getattr(display_sample, field, None)
+        if instances is None or 'bboxes' not in instances:
+            continue
+        bboxes = instances.bboxes
+        if isinstance(bboxes, BaseBoxes):
+            bboxes.rescale_(inverse_scale)
+            continue
+        if not isinstance(bboxes, torch.Tensor):
+            warnings.warn('Skipping GT coordinate restoration for unsupported '
+                          f'bbox type: {type(bboxes)}.')
+            continue
+        if bboxes.shape[-1] == 5:
+            ctrs, w, h, angle = torch.split(bboxes, [2, 1, 1, 1], dim=-1)
+            cos_value, sin_value = torch.cos(angle), torch.sin(angle)
+            ctrs *= ctrs.new_tensor(inverse_scale)
+            w *= torch.sqrt((inverse_scale[0] * cos_value)**2 +
+                            (inverse_scale[1] * sin_value)**2)
+            h *= torch.sqrt((inverse_scale[0] * sin_value)**2 +
+                            (inverse_scale[1] * cos_value)**2)
+            bboxes[...] = torch.cat(
+                [ctrs, w, h,
+                 torch.atan2(sin_value * inverse_scale[1],
+                             cos_value * inverse_scale[0])], dim=-1)
+        elif bboxes.shape[-1] % 2 == 0:
+            bboxes[..., 0::2] *= inverse_scale[0]
+            bboxes[..., 1::2] *= inverse_scale[1]
+        else:
+            warnings.warn('Skipping GT coordinate restoration for unsupported '
+                          f'bbox shape: {tuple(bboxes.shape)}.')
+    return display_sample
 
 
 @HOOKS.register_module()
@@ -100,10 +164,11 @@ class DetVisualizationHook(Hook):
         img = mmcv.imfrombytes(img_bytes, channel_order='rgb')
 
         if total_curr_iter % self.interval == 0:
+            display_sample = _restore_gt_instances_to_original_space(outputs[0])
             self._visualizer.add_datasample(
                 osp.basename(img_path) if self.show else 'val_img',
                 img,
-                data_sample=outputs[0],
+                data_sample=display_sample,
                 show=self.show,
                 wait_time=self.wait_time,
                 pred_score_thr=self.score_thr,
@@ -140,10 +205,11 @@ class DetVisualizationHook(Hook):
                 out_file = osp.basename(img_path)
                 out_file = osp.join(self.test_out_dir, out_file)
 
+            display_sample = _restore_gt_instances_to_original_space(data_sample)
             self._visualizer.add_datasample(
                 osp.basename(img_path) if self.show else 'test_img',
                 img,
-                data_sample=data_sample,
+                data_sample=display_sample,
                 show=self.show,
                 wait_time=self.wait_time,
                 pred_score_thr=self.score_thr,

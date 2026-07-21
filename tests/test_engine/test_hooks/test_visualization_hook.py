@@ -9,7 +9,10 @@ import torch
 from mmengine.structures import InstanceData
 
 from mmdet.engine.hooks import DetVisualizationHook, TrackVisualizationHook
+from mmdet.engine.hooks.visualization_hook import \
+    _restore_gt_instances_to_original_space
 from mmdet.structures import DetDataSample, TrackDataSample
+from mmdet.structures.bbox import HorizontalBoxes
 from mmdet.visualization import DetLocalVisualizer, TrackLocalVisualizer
 
 
@@ -26,6 +29,34 @@ def _rand_bboxes(num_boxes, h, w):
 
 
 class TestVisualizationHook(TestCase):
+
+    def test_restore_gt_instances_to_original_space(self):
+        """GT must match rescale=True predictions on the original image."""
+        data_sample = DetDataSample()
+        data_sample.set_metainfo(
+            dict(ori_shape=(600, 800), img_shape=(512, 736),
+                 scale_factor=(736 / 800, 512 / 600)))
+        gt_instances = InstanceData()
+        gt_instances.bboxes = HorizontalBoxes(
+            [[92.0, 85.333333, 184.0, 170.666667]])
+        gt_instances.labels = torch.tensor([0])
+        data_sample.gt_instances = gt_instances
+
+        display_sample = _restore_gt_instances_to_original_space(data_sample)
+
+        self.assertIsNot(display_sample, data_sample)
+        torch.testing.assert_close(
+            display_sample.gt_instances.bboxes.tensor,
+            torch.tensor([[100.0, 100.0, 200.0, 200.0]]),
+            rtol=0,
+            atol=1e-4)
+        # The metric receives the original runner output and must not observe
+        # visualizer-only mutations.
+        torch.testing.assert_close(
+            data_sample.gt_instances.bboxes.tensor,
+            torch.tensor([[92.0, 85.333333, 184.0, 170.666667]]),
+            rtol=0,
+            atol=1e-4)
 
     def setUp(self) -> None:
         DetLocalVisualizer.get_instance('current_visualizer')
