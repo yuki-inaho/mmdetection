@@ -1,25 +1,9 @@
-# Copyright (c) OpenMMLab. All rights reserved.
-"""Adan optimizer registered for OpenMMLab configs.
-
-Use as ``optimizer=dict(type='AdanOptimizer', ...)`` (or ``mmdet.AdanOptimizer``
-from another default scope). The ``adan`` backend (sail-sg/Adan) is optional and
-imported lazily so ``import mmdet`` never fails when it is absent; instantiating the
-optimizer without it raises a clear error. ``fused=False`` (the default) uses the
-pure-Python path and needs no CUDA fused kernel.
-"""
+from adan import Adan
 from mmdet.registry import OPTIMIZERS
-
-try:
-    from adan import Adan as _Adan
-except ImportError:
-    _Adan = None
-
-_Base = _Adan if _Adan is not None else object
 
 
 @OPTIMIZERS.register_module()
-class AdanOptimizer(_Base):
-
+class AdanOptimizer(Adan):
     def __init__(
         self,
         params,
@@ -33,11 +17,6 @@ class AdanOptimizer(_Base):
         fused=False,
         **kwargs,
     ):
-        if _Adan is None:
-            raise ImportError(
-                "AdanOptimizer requires the 'adan' package (sail-sg/Adan). Install it, "
-                "e.g. `FORCE_CUDA=0 pip install git+https://github.com/sail-sg/Adan.git "
-                "--no-build-isolation` for the pure-Python build.")
         super().__init__(
             params=params,
             lr=lr,
@@ -49,7 +28,8 @@ class AdanOptimizer(_Base):
             foreach=foreach,
             fused=fused,
         )
-        # mmengine's optimizer constructor expects these in ``defaults``.
+
+        # mmdetectionが要求するdefaults値を設定
         self.defaults.update(
             dict(
                 betas=betas,
@@ -59,4 +39,5 @@ class AdanOptimizer(_Base):
                 no_prox=no_prox,
                 foreach=foreach,
                 fused=fused,
-            ))
+            )
+        )
